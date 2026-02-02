@@ -1,4 +1,4 @@
-# DeepGuard AI - Deepfake Detection System
+ Deepfake Detection System
 
 🛡️ **AI-Powered Deepfake Detection** using a hybrid approach combining CNN, Frequency Analysis, and Temporal Modeling.
 
