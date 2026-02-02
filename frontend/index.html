@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description"
+        content="Free AI-powered deepfake detection tool. Analyze videos using hybrid CNN, frequency, and temporal analysis with 92%+ accuracy.">
+    <meta name="keywords" content="deepfake detection, AI, machine learning, video analysis, fake video detector">
+    <title>IDT - Deepfake Detection</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="#" class="nav-logo">
+                <img src="logo.png" alt="IDT Logo" class="logo-img">
+                <span class="logo-text">IDT</span>
+            </a>
+            <ul class="nav-links">
+                <li><a href="#features">Features</a></li>
+                <li><a href="#how-it-works">How It Works</a></li>
+                <li><a href="#faq">FAQ</a></li>
+            </ul>
+            <div class="nav-cta">
+                <a href="#upload" class="btn btn-primary">Try Now</a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <header class="hero">
+        <div class="hero-bg">
+            <div class="hero-glow"></div>
+            <div class="hero-grid"></div>
+        </div>
+        <div class="hero-content">
+            <div class="hero-badge">
+                <span class="badge-icon">✨</span>
+                <span>AI-Powered Detection</span>
+            </div>
+            <h1 class="hero-title">
+                Detect Deepfakes with
+                <span class="gradient-text">Advanced AI</span>
+            </h1>
+            <p class="hero-subtitle">
+                Upload any video and get instant, accurate results using our hybrid
+                AI system combining CNN, frequency analysis, and temporal modeling.
+            </p>
+            <div class="hero-stats">
+                <div class="stat">
+                    <span class="stat-value">96%+</span>
+                    <span class="stat-label">Accuracy</span>
+                </div>
+                <div class="stat-divider"></div>
+                <div class="stat">
+                    <span class="stat-value">&lt;60s</span>
+                    <span class="stat-label">Processing</span>
+                </div>
+            </div>
+            <a href="#upload" class="btn btn-hero">
+                <span>🎬</span>
+                <span>Analyze Your Video</span>
+                <span class="btn-arrow">→</span>
+            </a>
+        </div>
+    </header>
+
+    <!-- Upload Section -->
+    <section id="upload" class="upload-section">
+        <div class="container">
+            <div class="upload-container">
+                <div class="upload-zone" id="uploadZone">
+                    <div class="upload-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="17 8 12 3 7 8" />
+                            <line x1="12" y1="3" x2="12" y2="15" />
+                        </svg>
+                    </div>
+                    <h3 class="upload-title">Drop your video here</h3>
+                    <p class="upload-subtitle">or click to browse</p>
+                    <div class="upload-info">
+                        <span>📁 MP4, AVI, MOV, MKV, WebM</span>
+                        <span>•</span>
+                        <span>📏 Max 20MB</span>
+                    </div>
+                    <input type="file" id="videoInput" accept=".mp4,.avi,.mov,.mkv,.webm,.m4v" hidden>
+                </div>
+
+                <!-- File Selected State -->
+                <div class="file-selected hidden" id="fileSelected">
+                    <div class="file-preview">
+                        <video id="videoPreview" muted></video>
+                        <div class="file-info">
+                            <span class="file-name" id="fileName">video.mp4</span>
+                            <span class="file-size" id="fileSize">0 MB</span>
+                        </div>
+                    </div>
+                    <div class="file-actions">
+                        <button class="btn btn-secondary" id="changeFile">Change Video</button>
+                        <button class="btn btn-primary" id="analyzeBtn">
+                            <span>🔍</span>
+                            <span>Analyze Video</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Processing State -->
+                <div class="processing hidden" id="processing">
+                    <div class="processing-animation">
+                        <div class="scan-line"></div>
+                        <div class="processing-icon">
+                            <svg viewBox="0 0 100 100">
+                                <circle cx="50" cy="50" r="40" stroke="url(#gradient)" stroke-width="4" fill="none"
+                                    stroke-dasharray="251.2" stroke-dashoffset="251.2" class="progress-circle" />
+                                <defs>
+                                    <linearGradient id="gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                        <stop offset="0%" stop-color="#6366f1" />
+                                        <stop offset="100%" stop-color="#8b5cf6" />
+                                    </linearGradient>
+                                </defs>
+                            </svg>
+                            <span class="progress-percent" id="progressPercent">0%</span>
+                        </div>
+                    </div>
+                    <h3 class="processing-title" id="processingTitle">Analyzing Video...</h3>
+                    <p class="processing-status" id="processingStatus">Extracting frames and detecting faces...</p>
+                    <div class="processing-steps">
+                        <div class="step" id="step1">
+                            <span class="step-icon">📹</span>
+                            <span>Frame Extraction</span>
+                        </div>
+                        <div class="step" id="step2">
+                            <span class="step-icon">🧠</span>
+                            <span>CNN Analysis</span>
+                        </div>
+                        <div class="step" id="step3">
+                            <span class="step-icon">📊</span>
+                            <span>Frequency Analysis</span>
+                        </div>
+                        <div class="step" id="step4">
+                            <span class="step-icon">⏱️</span>
+                            <span>Temporal Analysis</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Results State -->
+                <div class="results hidden" id="results">
+                    <div class="result-header">
+                        <div class="result-badge" id="resultBadge">
+                            <span class="result-icon" id="resultIcon">✅</span>
+                            <span class="result-label" id="resultLabel">Real</span>
+                        </div>
+                    </div>
+
+                    <div class="result-score" id="resultScore">
+                        <div class="score-ring" id="scoreRing">
+                            <svg viewBox="0 0 120 120">
+                                <circle cx="60" cy="60" r="54" stroke="#1e293b" stroke-width="8" fill="none" />
+                                <circle cx="60" cy="60" r="54" stroke="url(#scoreGradient)" stroke-width="8" fill="none"
+                                    stroke-dasharray="339.3" stroke-dashoffset="339.3" class="score-progress"
+                                    id="scoreProgress" stroke-linecap="round" transform="rotate(-90 60 60)" />
+                                <defs>
+                                    <linearGradient id="scoreGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                        <stop offset="0%" stop-color="#22c55e" />
+                                        <stop offset="100%" stop-color="#16a34a" />
+                                    </linearGradient>
+                                </defs>
+                            </svg>
+                            <div class="score-value">
+                                <span class="score-number" id="scoreNumber">0</span>
+                                <span class="score-unit">%</span>
+                            </div>
+                        </div>
+                        <p class="score-description" id="scoreDescription">This video appears to be authentic.</p>
+                    </div>
+
+                    <div class="result-details">
+                        <h4>Analysis Breakdown</h4>
+                        <div class="detail-grid">
+                            <div class="detail-card">
+                                <span class="detail-label">CNN Analysis</span>
+                                <div class="detail-bar">
+                                    <div class="detail-fill" id="cnnBar" style="width: 0%"></div>
+                                </div>
+                                <span class="detail-value" id="cnnValue">0%</span>
+                            </div>
+                            <div class="detail-card">
+                                <span class="detail-label">Frequency Analysis</span>
+                                <div class="detail-bar">
+                                    <div class="detail-fill" id="freqBar" style="width: 0%"></div>
+                                </div>
+                                <span class="detail-value" id="freqValue">0%</span>
+                            </div>
+                            <div class="detail-card">
+                                <span class="detail-label">Temporal Analysis</span>
+                                <div class="detail-bar">
+                                    <div class="detail-fill" id="tempBar" style="width: 0%"></div>
+                                </div>
+                                <span class="detail-value" id="tempValue">0%</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="result-meta">
+                        <div class="meta-item">
+                            <span class="meta-label">Processing Time</span>
+                            <span class="meta-value" id="processingTime">0s</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Frames Analyzed</span>
+                            <span class="meta-value" id="framesAnalyzed">0</span>
+                        </div>
+                        <div class="meta-item">
+                            <span class="meta-label">Confidence</span>
+                            <span class="meta-value" id="confidenceValue">0%</span>
+                        </div>
+                    </div>
+
+                    <div class="result-actions">
+                        <button class="btn btn-secondary" id="newAnalysis">
+                            <span>🔄</span>
+                            <span>Analyze Another</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Error State -->
+                <div class="error-state hidden" id="errorState">
+                    <div class="error-icon">❌</div>
+                    <h3 class="error-title">Analysis Failed</h3>
+                    <p class="error-message" id="errorMessage">Something went wrong.</p>
+                    <button class="btn btn-primary" id="retryBtn">Try Again</button>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="features-section">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">Features</span>
+                <h2 class="section-title">Hybrid AI Detection System</h2>
+                <p class="section-subtitle">Our multi-layer approach ensures maximum accuracy by combining three
+                    powerful analysis methods</p>
+            </div>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">🧠</div>
+                    <h3>CNN Analysis</h3>
+                    <p>XceptionNet deep learning model trained to detect frame-level manipulation artifacts, blending
+                        boundaries, and texture inconsistencies.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📊</div>
+                    <h3>Frequency Analysis</h3>
+                    <p>FFT and DCT transforms reveal GAN fingerprints and unnatural frequency patterns invisible to the
+                        human eye.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">⏱️</div>
+                    <h3>Temporal Analysis</h3>
+                    <p>Transformer-based model detects temporal inconsistencies, abnormal blinking patterns, and
+                        expression discontinuities.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🔒</div>
+                    <h3>Privacy First</h3>
+                    <p>Your videos are processed locally and deleted immediately after analysis. We never store your
+                        content.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3>Fast Processing</h3>
+                    <p>Get results in under a minute. Our optimized pipeline extracts key frames and analyzes faces
+                        efficiently.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🎯</div>
+                    <h3>High Accuracy</h3>
+                    <p>92%+ accuracy on known deepfake datasets with clear confidence scoring and detailed breakdowns.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works Section -->
+    <section id="how-it-works" class="how-section">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">Process</span>
+                <h2 class="section-title">How It Works</h2>
+                <p class="section-subtitle">Four simple steps to verify your video</p>
+            </div>
+            <div class="steps-container">
+                <div class="step-card">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h3>Upload Your Video</h3>
+                        <p>Drag and drop or click to select a video file. We support MP4, AVI, MOV, MKV, and WebM up to
+                            20MB.</p>
+                    </div>
+                </div>
+                <div class="step-connector"></div>
+                <div class="step-card">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h3>AI Processing</h3>
+                        <p>Our hybrid AI system extracts frames, detects faces, and runs multi-layer analysis in under
+                            60 seconds.</p>
+                    </div>
+                </div>
+                <div class="step-connector"></div>
+                <div class="step-card">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h3>View Results</h3>
+                        <p>Get a clear verdict with confidence score, detailed breakdown, and explanation of detected
+                            patterns.</p>
+                    </div>
+                </div>
+                <div class="step-connector"></div>
+                <div class="step-card">
+                    <div class="step-number">4</div>
+                    <div class="step-content">
+                        <h3>Take Action</h3>
+                        <p>Share results, download reports, or analyze another video. Stay informed and protect yourself
+                            from misinformation.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Classification Legend -->
+    <section class="legend-section">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">Results Guide</span>
+                <h2 class="section-title">Understanding Your Results</h2>
+            </div>
+            <div class="legend-grid">
+                <div class="legend-card legend-real">
+                    <div class="legend-icon">✅</div>
+                    <div class="legend-content">
+                        <h4>Real</h4>
+                        <p class="legend-range">&lt; 50% detection score</p>
+                        <p>No significant manipulation detected. The video appears authentic.</p>
+                    </div>
+                </div>
+                <div class="legend-card legend-low">
+                    <div class="legend-icon">⚠️</div>
+                    <div class="legend-content">
+                        <h4>Low Confidence Deepfake</h4>
+                        <p class="legend-range">50% - 80% detection score</p>
+                        <p>Some suspicious patterns detected. Review with caution.</p>
+                    </div>
+                </div>
+                <div class="legend-card legend-probable">
+                    <div class="legend-icon">🔶</div>
+                    <div class="legend-content">
+                        <h4>Most Probably Deepfake</h4>
+                        <p class="legend-range">80% - 92% detection score</p>
+                        <p>Strong manipulation indicators. High likelihood of synthetic content.</p>
+                    </div>
+                </div>
+                <div class="legend-card legend-definite">
+                    <div class="legend-icon">🔴</div>
+                    <div class="legend-content">
+                        <h4>Definitely a Deepfake</h4>
+                        <p class="legend-range">&gt; 92% detection score</p>
+                        <p>Clear evidence of manipulation detected across multiple analysis methods.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- FAQ Section -->
+    <section id="faq" class="faq-section">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">FAQ</span>
+                <h2 class="section-title">Frequently Asked Questions</h2>
+            </div>
+            <div class="faq-container">
+                <div class="faq-item">
+                    <button class="faq-question">
+                        <span>What is deepfake detection?</span>
+                        <span class="faq-icon">+</span>
+                    </button>
+                    <div class="faq-answer">
+                        <p>Deepfake detection uses AI to identify manipulated or synthetically generated videos. Our
+                            system analyzes visual artifacts, frequency patterns, and temporal inconsistencies to
+                            determine if a video has been altered.</p>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question">
+                        <span>How accurate is the detection?</span>
+                        <span class="faq-icon">+</span>
+                    </button>
+                    <div class="faq-answer">
+                        <p>Our hybrid system achieves 92%+ accuracy on standard deepfake datasets. The multi-layer
+                            approach combining CNN, frequency, and temporal analysis significantly reduces false
+                            positives and negatives.</p>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question">
+                        <span>Is my video stored on your servers?</span>
+                        <span class="faq-icon">+</span>
+                    </button>
+                    <div class="faq-answer">
+                        <p>No. Your video is processed immediately and deleted right after analysis. We don't store,
+                            share, or retain any of your uploaded content.</p>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question">
+                        <span>What video formats are supported?</span>
+                        <span class="faq-icon">+</span>
+                    </button>
+                    <div class="faq-answer">
+                        <p>We support MP4, AVI, MOV, MKV, WebM, and M4V formats. Maximum file size is 20MB to ensure
+                            fast processing.</p>
+                    </div>
+                </div>
+                <div class="faq-item">
+                    <button class="faq-question">
+                        <span>How long does analysis take?</span>
+                        <span class="faq-icon">+</span>
+                    </button>
+                    <div class="faq-answer">
+                        <p>Most videos are analyzed in under 60 seconds. Processing time depends on video length and
+                            number of faces detected.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Members Section -->
+    <section id="members" class="members-section">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">Team</span>
+                <h2 class="section-title">Members</h2>
+                <p class="section-subtitle">The team behind IDT Deepfake Detection</p>
+            </div>
+            <div class="members-grid">
+                <div class="member-card">
+                    <div class="member-avatar">MA</div>
+                    <h4>Manvith A</h4>
+                </div>
+                <div class="member-card">
+                    <div class="member-avatar">KS</div>
+                    <h4>Karthik K Shetty</h4>
+                </div>
+                <div class="member-card">
+                    <div class="member-avatar">MH</div>
+                    <h4>Muhammed Ali Hamdaan</h4>
+                </div>
+                <div class="member-card">
+                    <div class="member-avatar">PP</div>
+                    <h4>Preetham P</h4>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <img src="logo.png" alt="IDT Logo" class="logo-img footer-logo">
+                    <span class="logo-text">IDT</span>
+                    <p>Free AI-powered deepfake detection using state-of-the-art hybrid analysis.</p>
+                </div>
+                <div class="footer-links">
+                    <a href="#features">Features</a>
+                    <a href="#how-it-works">How It Works</a>
+                    <a href="#faq">FAQ</a>
+                </div>
+            </div>
+            <div class="footer-bottom">
+                <p>&copy; 2026 IDT. Built for a safer digital world.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+
+</html>
