@@ -4,7 +4,7 @@
  */
 
 // Configuration
-const API_BASE_URL = 'http://localhost:8000/api';
+const API_BASE_URL = 'https://deepfake-detection-1-6jc0.onrender.com/api';
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 const POLL_INTERVAL = 1000; // 1 second
 const ALLOWED_TYPES = ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.m4v'];
