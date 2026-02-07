@@ -1,10 +1,12 @@
 """
-Deepfake Detection API - Main FastAPI Application
+Deepfake Detection API - Main FastAPI Application (Optimized for Render)
 
 Provides endpoints for:
 - Video upload and analysis
 - Real-time processing status
 - Health checks
+
+Optimized with lazy loading to minimize memory footprint during deployment.
 """
 import os
 import uuid
@@ -26,7 +28,6 @@ from config import (
     FACE_SIZE, MIN_FACE_CONFIDENCE
 )
 from video_processor import VideoProcessor, validate_video_file
-from models import CNNDetector, FrequencyAnalyzer, TemporalModel, EnsembleDetector
 
 
 # ============================================================================
@@ -71,8 +72,8 @@ class HealthResponse(BaseModel):
 # Task storage (in production, use Redis or database)
 tasks: Dict[str, AnalysisStatus] = {}
 
-# Model instances (lazy loaded)
-models = {
+# Model registry - stores None until models are actually needed
+_model_cache = {
     "cnn": None,
     "frequency": None,
     "temporal": None,
@@ -80,41 +81,117 @@ models = {
     "video_processor": None
 }
 
+# Track if GPU is available (checked once)
+_gpu_available = None
 
-def load_models():
-    """Load all ML models."""
-    global models
-    
-    if models["cnn"] is None:
-        print("[API] Loading models...")
-        
-        # Check GPU availability
-        import torch
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        print(f"[API] Using device: {device}")
-        
-        models["cnn"] = CNNDetector(device=device)
-        models["frequency"] = FrequencyAnalyzer()
-        models["temporal"] = TemporalModel(device=device)
-        models["ensemble"] = EnsembleDetector()
-        models["video_processor"] = VideoProcessor(
+
+def check_gpu_availability():
+    """Check if GPU is available (cached result)."""
+    global _gpu_available
+    if _gpu_available is None:
+        try:
+            import torch
+            _gpu_available = torch.cuda.is_available()
+        except ImportError:
+            _gpu_available = False
+    return _gpu_available
+
+
+def get_device():
+    """Get device for model loading."""
+    return "cuda" if check_gpu_availability() else "cpu"
+
+
+# ============================================================================
+# Lazy Model Loading Functions
+# ============================================================================
+
+def get_cnn_detector():
+    """Lazy load CNN detector only when needed."""
+    if _model_cache["cnn"] is None:
+        print("[API] Loading CNN detector...")
+        from models import CNNDetector
+        _model_cache["cnn"] = CNNDetector(device=get_device())
+        print("[API] CNN detector loaded")
+    return _model_cache["cnn"]
+
+
+def get_frequency_analyzer():
+    """Lazy load frequency analyzer only when needed."""
+    if _model_cache["frequency"] is None:
+        print("[API] Loading frequency analyzer...")
+        from models import FrequencyAnalyzer
+        _model_cache["frequency"] = FrequencyAnalyzer()
+        print("[API] Frequency analyzer loaded")
+    return _model_cache["frequency"]
+
+
+def get_temporal_model():
+    """Lazy load temporal model only when needed."""
+    if _model_cache["temporal"] is None:
+        print("[API] Loading temporal model...")
+        from models import TemporalModel
+        _model_cache["temporal"] = TemporalModel(device=get_device())
+        print("[API] Temporal model loaded")
+    return _model_cache["temporal"]
+
+
+def get_ensemble_detector():
+    """Lazy load ensemble detector only when needed."""
+    if _model_cache["ensemble"] is None:
+        print("[API] Loading ensemble detector...")
+        from models import EnsembleDetector
+        _model_cache["ensemble"] = EnsembleDetector()
+        print("[API] Ensemble detector loaded")
+    return _model_cache["ensemble"]
+
+
+def get_video_processor():
+    """Lazy load video processor only when needed."""
+    if _model_cache["video_processor"] is None:
+        print("[API] Loading video processor...")
+        _model_cache["video_processor"] = VideoProcessor(
             frames_to_extract=FRAMES_TO_EXTRACT,
             face_size=FACE_SIZE,
             min_face_confidence=MIN_FACE_CONFIDENCE,
-            device=device
+            device=get_device()
         )
-        
-        print("[API] All models loaded successfully")
+        print("[API] Video processor loaded")
+    return _model_cache["video_processor"]
+
+
+def cleanup_models():
+    """Cleanup loaded models to free memory."""
+    global _model_cache
+    for key in _model_cache:
+        if _model_cache[key] is not None:
+            del _model_cache[key]
+            _model_cache[key] = None
+    
+    # Force garbage collection
+    import gc
+    gc.collect()
+    
+    # Clear CUDA cache if available
+    if check_gpu_availability():
+        import torch
+        torch.cuda.empty_cache()
+    
+    print("[API] Models cleaned up, memory freed")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
-    # Startup
-    load_models()
+    # Startup - DO NOT load models, just prepare directories
+    print("[API] Starting up - using lazy loading for models")
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    
     yield
-    # Shutdown
+    
+    # Shutdown - cleanup any loaded models
     print("[API] Shutting down...")
+    cleanup_models()
 
 
 # ============================================================================
@@ -124,7 +201,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title=API_TITLE,
     version=API_VERSION,
-    description="AI-powered deepfake detection API using hybrid CNN + Frequency + Temporal analysis",
+    description="AI-powered deepfake detection API using hybrid CNN + Frequency + Temporal analysis (Optimized)",
     lifespan=lifespan
 )
 
@@ -145,13 +222,11 @@ app.add_middleware(
 @app.get("/api/health", response_model=HealthResponse)
 async def health_check():
     """Check API health and model status."""
-    import torch
-    
     return HealthResponse(
         status="healthy",
         version=API_VERSION,
-        models_loaded=models["cnn"] is not None,
-        gpu_available=torch.cuda.is_available()
+        models_loaded=any(model is not None for model in _model_cache.values()),
+        gpu_available=check_gpu_availability()
     )
 
 
@@ -174,9 +249,6 @@ async def analyze_video(
             status_code=400,
             detail=f"Invalid file type. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
         )
-    
-    # Check file size from content-length if available
-    # (actual size check happens after upload)
     
     # Generate task ID
     task_id = str(uuid.uuid4())
@@ -268,6 +340,16 @@ async def get_result(task_id: str):
     }
 
 
+@app.post("/api/cleanup")
+async def cleanup_endpoint():
+    """
+    Manual endpoint to cleanup models and free memory.
+    Useful after processing to reduce memory usage.
+    """
+    cleanup_models()
+    return {"status": "success", "message": "Models cleaned up, memory freed"}
+
+
 # ============================================================================
 # Background Processing
 # ============================================================================
@@ -276,7 +358,7 @@ async def process_video_task(task_id: str, video_path: str):
     """
     Background task to process a video.
     
-    This runs the full analysis pipeline:
+    This runs the full analysis pipeline with lazy-loaded models:
     1. Extract frames and detect faces
     2. Run CNN analysis
     3. Run frequency analysis
@@ -292,8 +374,8 @@ async def process_video_task(task_id: str, video_path: str):
         tasks[task_id].progress = 0.1
         tasks[task_id].message = "Extracting frames and detecting faces..."
         
-        # Process video
-        video_processor = models["video_processor"]
+        # Process video (lazy loads video processor if needed)
+        video_processor = get_video_processor()
         video_info = video_processor.get_video_info(video_path)
         face_images = video_processor.get_face_images(video_path)
         
@@ -306,22 +388,22 @@ async def process_video_task(task_id: str, video_path: str):
         tasks[task_id].progress = 0.3
         tasks[task_id].message = f"Analyzing {len(face_images)} faces with CNN..."
         
-        # Run CNN analysis
-        cnn_detector = models["cnn"]
+        # Run CNN analysis (lazy loads CNN detector if needed)
+        cnn_detector = get_cnn_detector()
         cnn_result = cnn_detector.analyze_video_frames(face_images)
         
         tasks[task_id].progress = 0.5
         tasks[task_id].message = "Running frequency analysis..."
         
-        # Run frequency analysis
-        freq_analyzer = models["frequency"]
+        # Run frequency analysis (lazy loads frequency analyzer if needed)
+        freq_analyzer = get_frequency_analyzer()
         freq_result = freq_analyzer.analyze_video_frames(face_images)
         
         tasks[task_id].progress = 0.7
         tasks[task_id].message = "Analyzing temporal patterns..."
         
-        # Run temporal analysis
-        temp_model = models["temporal"]
+        # Run temporal analysis (lazy loads temporal model if needed)
+        temp_model = get_temporal_model()
         if len(cnn_result.get("features", [])) > 0:
             temp_result = temp_model.analyze_video_features(cnn_result["features"])
         else:
@@ -330,8 +412,8 @@ async def process_video_task(task_id: str, video_path: str):
         tasks[task_id].progress = 0.9
         tasks[task_id].message = "Computing final classification..."
         
-        # Ensemble fusion
-        ensemble = models["ensemble"]
+        # Ensemble fusion (lazy loads ensemble detector if needed)
+        ensemble = get_ensemble_detector()
         final_result = ensemble.analyze(cnn_result, freq_result, temp_result)
         
         # Calculate processing time
@@ -388,4 +470,9 @@ def cleanup_video(video_path: str):
 
 
 # ============================================================================
+# Entry Point
+# ============================================================================
 
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

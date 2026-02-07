@@ -6,6 +6,8 @@ Uses Transformer architecture to analyze temporal patterns in video:
 - Blinking patterns
 - Movement continuity
 - Frame-to-frame coherence
+
+OPTIMIZED: Model is loaded lazily only when needed.
 """
 import torch
 import torch.nn as nn
@@ -134,6 +136,8 @@ class TemporalModel:
     - Temporal inconsistencies
     - Unnatural transitions
     - Missing/abnormal blink patterns
+    
+    OPTIMIZED: Model is loaded lazily on first use.
     """
     
     def __init__(self, input_dim: int = 2048, device: Optional[str] = None):
@@ -143,16 +147,24 @@ class TemporalModel:
         else:
             self.device = torch.device(device)
         
-        # Initialize model
-        self.model = TemporalTransformer(input_dim=input_dim)
-        self.model = self.model.to(self.device)
-        self.model.eval()
+        # Model will be loaded lazily
+        self.model = None
+        self.input_dim = input_dim
         
         # Statistics for feature normalization
         self.feature_mean = None
         self.feature_std = None
         
-        print(f"[Temporal Model] Initialized on {self.device}")
+        print(f"[Temporal Model] Initialized (lazy loading enabled) on {self.device}")
+    
+    def _ensure_model_loaded(self):
+        """Load the model if not already loaded."""
+        if self.model is None:
+            print(f"[Temporal Model] Loading Transformer model...")
+            self.model = TemporalTransformer(input_dim=self.input_dim)
+            self.model = self.model.to(self.device)
+            self.model.eval()
+            print(f"[Temporal Model] Model loaded successfully")
     
     def normalize_features(self, features: np.ndarray) -> np.ndarray:
         """Normalize features for better model performance."""
@@ -179,6 +191,9 @@ class TemporalModel:
                 "temporal_consistency": 1.0,
                 "anomaly_frames": []
             }
+        
+        # Ensure model is loaded
+        self._ensure_model_loaded()
         
         # Normalize features
         features_norm = self.normalize_features(features[np.newaxis, ...])

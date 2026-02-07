@@ -3,6 +3,8 @@ CNN-based Deepfake Detector using XceptionNet.
 
 XceptionNet is highly effective for deepfake detection due to its
 depthwise separable convolutions that capture manipulation artifacts.
+
+OPTIMIZED: Models are loaded lazily only when needed.
 """
 import torch
 import torch.nn as nn
@@ -71,6 +73,8 @@ class CNNDetector:
     - Texture inconsistencies
     - Unnatural facial features
     - Compression artifacts specific to deepfakes
+    
+    OPTIMIZED: Model is loaded lazily on first use.
     """
     
     def __init__(self, device: Optional[str] = None, pretrained: bool = True):
@@ -80,10 +84,9 @@ class CNNDetector:
         else:
             self.device = torch.device(device)
         
-        # Initialize model
-        self.model = XceptionNet(pretrained=pretrained)
-        self.model = self.model.to(self.device)
-        self.model.eval()
+        # Model will be loaded lazily
+        self.model = None
+        self.pretrained = pretrained
         
         # Image preprocessing (ImageNet normalization)
         self.transform = transforms.Compose([
@@ -95,7 +98,16 @@ class CNNDetector:
             )
         ])
         
-        print(f"[CNN Detector] Initialized on {self.device}")
+        print(f"[CNN Detector] Initialized (lazy loading enabled) on {self.device}")
+    
+    def _ensure_model_loaded(self):
+        """Load the model if not already loaded."""
+        if self.model is None:
+            print(f"[CNN Detector] Loading XceptionNet model...")
+            self.model = XceptionNet(pretrained=self.pretrained)
+            self.model = self.model.to(self.device)
+            self.model.eval()
+            print(f"[CNN Detector] Model loaded successfully")
     
     def preprocess_face(self, face_image: np.ndarray) -> torch.Tensor:
         """
@@ -132,6 +144,9 @@ class CNNDetector:
         Returns:
             Tuple of (fake_probability, feature_vector)
         """
+        # Ensure model is loaded
+        self._ensure_model_loaded()
+        
         # Preprocess
         tensor = self.preprocess_face(face_image)
         tensor = tensor.unsqueeze(0).to(self.device)
@@ -162,6 +177,9 @@ class CNNDetector:
         """
         if not face_images:
             return []
+        
+        # Ensure model is loaded
+        self._ensure_model_loaded()
         
         # Preprocess all images
         tensors = [self.preprocess_face(img) for img in face_images]
