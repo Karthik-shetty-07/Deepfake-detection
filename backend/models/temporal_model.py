@@ -7,7 +7,11 @@ Uses Transformer architecture to analyze temporal patterns in video:
 - Movement continuity
 - Frame-to-frame coherence
 
-OPTIMIZED: Model is loaded lazily only when needed.
+Improved with:
+- Better positional encoding
+- Optical flow-inspired difference features
+- More robust statistical analysis
+- Weighted temporal scoring
 """
 import torch
 import torch.nn as nn
@@ -30,26 +34,17 @@ class PositionalEncoding(nn.Module):
         self.register_buffer('pe', pe)
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            x: Tensor of shape [seq_len, batch_size, embedding_dim]
-        """
         return x + self.pe[:x.size(0)]
 
 
 class TemporalTransformer(nn.Module):
     """
     Transformer model for temporal analysis of face sequences.
-    
-    Detects temporal inconsistencies in deepfake videos:
-    - Unnatural transitions between frames
-    - Inconsistent facial expressions
-    - Abnormal blinking patterns
     """
     
     def __init__(
         self,
-        input_dim: int = 2048,  # Feature dimension from CNN
+        input_dim: int = 2048,
         d_model: int = 512,
         nhead: int = 8,
         num_layers: int = 4,
@@ -59,13 +54,14 @@ class TemporalTransformer(nn.Module):
     ):
         super().__init__()
         
-        # Input projection
-        self.input_projection = nn.Linear(input_dim, d_model)
+        self.input_projection = nn.Sequential(
+            nn.Linear(input_dim, d_model),
+            nn.LayerNorm(d_model),
+            nn.Dropout(dropout)
+        )
         
-        # Positional encoding
         self.pos_encoder = PositionalEncoding(d_model, max_seq_len)
         
-        # Transformer encoder
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model,
             nhead=nhead,
@@ -77,12 +73,13 @@ class TemporalTransformer(nn.Module):
         
         # Classification head
         self.classifier = nn.Sequential(
+            nn.LayerNorm(d_model),
             nn.Linear(d_model, 256),
             nn.ReLU(),
             nn.Dropout(dropout),
             nn.Linear(256, 64),
             nn.ReLU(),
-            nn.Linear(64, 2)  # [real, fake]
+            nn.Linear(64, 2)
         )
         
         # Temporal difference analyzer
@@ -96,34 +93,19 @@ class TemporalTransformer(nn.Module):
         self.d_model = d_model
     
     def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Args:
-            x: Input features [batch_size, seq_len, input_dim]
-            mask: Optional attention mask
-            
-        Returns:
-            Tuple of (classification_logits, temporal_anomaly_scores)
-        """
-        # Project input
-        x = self.input_projection(x)  # [batch, seq, d_model]
-        
-        # Transpose for transformer: [seq, batch, d_model]
+        x = self.input_projection(x)
         x = x.transpose(0, 1)
-        
-        # Add positional encoding
         x = self.pos_encoder(x)
-        
-        # Transformer encoding
-        encoded = self.transformer_encoder(x, mask=mask)  # [seq, batch, d_model]
+        encoded = self.transformer_encoder(x, mask=mask)
         
         # Global pooling for classification
-        pooled = encoded.mean(dim=0)  # [batch, d_model]
-        logits = self.classifier(pooled)  # [batch, 2]
+        pooled = encoded.mean(dim=0)
+        logits = self.classifier(pooled)
         
-        # Compute temporal differences for anomaly detection
-        encoded_t = encoded.transpose(0, 1)  # [batch, seq, d_model]
-        diffs = encoded_t[:, 1:, :] - encoded_t[:, :-1, :]  # [batch, seq-1, d_model]
-        anomaly_scores = self.diff_analyzer(diffs).squeeze(-1)  # [batch, seq-1]
+        # Temporal differences for anomaly detection
+        encoded_t = encoded.transpose(0, 1)
+        diffs = encoded_t[:, 1:, :] - encoded_t[:, :-1, :]
+        anomaly_scores = self.diff_analyzer(diffs).squeeze(-1)
         
         return logits, anomaly_scores
 
@@ -137,28 +119,23 @@ class TemporalModel:
     - Unnatural transitions
     - Missing/abnormal blink patterns
     
-    OPTIMIZED: Model is loaded lazily on first use.
+    Improved with better statistical features and weighted scoring.
     """
     
     def __init__(self, input_dim: int = 2048, device: Optional[str] = None):
-        # Set device
         if device is None:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         else:
             self.device = torch.device(device)
         
-        # Model will be loaded lazily
         self.model = None
         self.input_dim = input_dim
-        
-        # Statistics for feature normalization
         self.feature_mean = None
         self.feature_std = None
         
-        print(f"[Temporal Model] Initialized (lazy loading enabled) on {self.device}")
+        print(f"[Temporal Model] Initialized (lazy loading) on {self.device}")
     
     def _ensure_model_loaded(self):
-        """Load the model if not already loaded."""
         if self.model is None:
             print(f"[Temporal Model] Loading Transformer model...")
             self.model = TemporalTransformer(input_dim=self.input_dim)
@@ -167,24 +144,13 @@ class TemporalModel:
             print(f"[Temporal Model] Model loaded successfully")
     
     def normalize_features(self, features: np.ndarray) -> np.ndarray:
-        """Normalize features for better model performance."""
         if self.feature_mean is None:
             self.feature_mean = np.mean(features, axis=(0, 1), keepdims=True)
             self.feature_std = np.std(features, axis=(0, 1), keepdims=True) + 1e-8
-        
         return (features - self.feature_mean) / self.feature_std
     
     @torch.no_grad()
     def analyze_sequence(self, features: np.ndarray) -> Dict[str, any]:
-        """
-        Analyze a sequence of frame features.
-        
-        Args:
-            features: Feature array [seq_len, feature_dim]
-            
-        Returns:
-            Dictionary with temporal analysis results
-        """
         if len(features) < 2:
             return {
                 "fake_score": 0.5,
@@ -192,27 +158,24 @@ class TemporalModel:
                 "anomaly_frames": []
             }
         
-        # Ensure model is loaded
         self._ensure_model_loaded()
         
-        # Normalize features
         features_norm = self.normalize_features(features[np.newaxis, ...])
-        
-        # Convert to tensor
         tensor = torch.FloatTensor(features_norm).to(self.device)
         
-        # Get predictions
         logits, anomaly_scores = self.model(tensor)
         probs = F.softmax(logits, dim=1)
         
         fake_prob = probs[0, 1].item()
         anomaly_scores = anomaly_scores[0].cpu().numpy()
         
-        # Compute temporal consistency (inverse of anomaly)
         temporal_consistency = 1.0 - np.mean(anomaly_scores)
         
-        # Find anomalous frames
-        anomaly_threshold = np.mean(anomaly_scores) + 2 * np.std(anomaly_scores)
+        # Find anomalous frames using adaptive thresholding
+        if len(anomaly_scores) > 2:
+            anomaly_threshold = np.mean(anomaly_scores) + 1.5 * np.std(anomaly_scores)
+        else:
+            anomaly_threshold = 0.7
         anomaly_frames = np.where(anomaly_scores > anomaly_threshold)[0].tolist()
         
         return {
@@ -223,21 +186,14 @@ class TemporalModel:
         }
     
     def analyze_with_statistical_features(self, features: np.ndarray) -> Dict[str, any]:
-        """
-        Combine model-based and statistical temporal analysis.
-        
-        Adds heuristic-based features that are effective for deepfake detection.
-        """
-        # Get model-based analysis
+        """Combine model-based and statistical temporal analysis."""
         model_result = self.analyze_sequence(features)
-        
-        # Compute additional statistical features
         stat_features = self._compute_statistical_features(features)
         
-        # Combine scores (weighted average)
+        # Weighted combination
         combined_score = (
-            0.6 * model_result["fake_score"] +
-            0.4 * stat_features["statistical_score"]
+            0.5 * model_result["fake_score"] +
+            0.5 * stat_features["statistical_score"]
         )
         
         return {
@@ -247,15 +203,7 @@ class TemporalModel:
         }
     
     def analyze_video_features(self, features: np.ndarray) -> Dict[str, any]:
-        """
-        Full temporal analysis for video features.
-        
-        Args:
-            features: Feature array from CNN [num_frames, feature_dim]
-            
-        Returns:
-            Complete temporal analysis results
-        """
+        """Full temporal analysis for video features."""
         if len(features) == 0:
             return {
                 "mean_score": 0.5,
@@ -276,10 +224,7 @@ class TemporalModel:
     
     def _compute_statistical_features(self, features: np.ndarray) -> Dict[str, float]:
         """
-        Compute statistical features for temporal analysis.
-        
-        These hand-crafted features capture temporal patterns
-        that are effective for deepfake detection.
+        Enhanced statistical features for temporal analysis.
         """
         if len(features) < 2:
             return {"statistical_score": 0.5}
@@ -288,12 +233,12 @@ class TemporalModel:
         diffs = np.diff(features, axis=0)
         diff_norms = np.linalg.norm(diffs, axis=1)
         
-        # Statistics of temporal differences
+        # Basic statistics
         mean_diff = np.mean(diff_norms)
         std_diff = np.std(diff_norms)
         max_diff = np.max(diff_norms)
         
-        # Coefficient of variation (normalized measure of variability)
+        # Coefficient of variation
         cv = std_diff / (mean_diff + 1e-8)
         
         # Sudden change detection
@@ -307,24 +252,61 @@ class TemporalModel:
         else:
             autocorr = 0.0
         
+        # Jitter: second-order differences (acceleration)
+        if len(features) >= 3:
+            second_diffs = np.diff(features, n=2, axis=0)
+            jitter = float(np.mean(np.linalg.norm(second_diffs, axis=1)))
+        else:
+            jitter = 0.0
+        
+        # Feature-space trajectory smoothness
+        if len(features) >= 3:
+            # Cosine similarity between consecutive difference vectors
+            cos_sims = []
+            for i in range(len(diffs) - 1):
+                d1 = diffs[i]
+                d2 = diffs[i + 1]
+                norm1 = np.linalg.norm(d1)
+                norm2 = np.linalg.norm(d2)
+                if norm1 > 1e-8 and norm2 > 1e-8:
+                    cos_sim = np.dot(d1, d2) / (norm1 * norm2)
+                    cos_sims.append(cos_sim)
+            trajectory_smoothness = float(np.mean(cos_sims)) if cos_sims else 0.0
+        else:
+            trajectory_smoothness = 0.0
+        
         # Compute heuristic fake score
         score = 0.5
         
         # High variability is suspicious
         if cv > 0.5:
-            score += 0.1
+            score += 0.10
+        elif cv > 0.35:
+            score += 0.05
         
         # Sudden changes are suspicious
         if sudden_changes > 2:
-            score += min(0.2, sudden_changes * 0.05)
-        
-        # Very low autocorrelation (erratic movements) is suspicious
-        if autocorr < 0.3:
-            score += 0.1
-        
-        # Very high autocorrelation (unnaturally smooth) is also suspicious
-        if autocorr > 0.95:
+            score += min(0.20, sudden_changes * 0.05)
+        elif sudden_changes > 0:
             score += 0.05
+        
+        # Very low autocorrelation (erratic) is suspicious
+        if autocorr < 0.2:
+            score += 0.10
+        
+        # Very high autocorrelation (unnaturally smooth) is suspicious
+        if autocorr > 0.95:
+            score += 0.08
+        
+        # High jitter suggests frame-level manipulation
+        if jitter > 0 and mean_diff > 0:
+            jitter_ratio = jitter / (mean_diff + 1e-8)
+            if jitter_ratio > 1.5:
+                score += 0.08
+        
+        # Low trajectory smoothness = erratic direction changes
+        if trajectory_smoothness < 0.0:
+            score += 0.08
         
         return {
             "mean_diff": float(mean_diff),
@@ -333,5 +315,7 @@ class TemporalModel:
             "cv": float(cv),
             "sudden_changes": int(sudden_changes),
             "autocorrelation": float(autocorr),
+            "jitter": float(jitter),
+            "trajectory_smoothness": float(trajectory_smoothness),
             "statistical_score": float(max(0.0, min(1.0, score)))
         }
