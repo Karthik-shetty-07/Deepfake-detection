@@ -67,9 +67,19 @@ API_VERSION = "2.0.0"
 API_TITLE = "Deepfake Detection API"
 DEBUG = os.environ.get("DEBUG", "false").lower() == "true"
 
-# CORS – default "*" for dev; set a comma-separated list in production
-_cors_env = os.environ.get("CORS_ORIGINS", "*")
-CORS_ORIGINS = [o.strip() for o in _cors_env.split(",")] if _cors_env != "*" else ["*"]
+# CORS – production defaults include Vercel domains; override via env var
+_cors_env = os.environ.get("CORS_ORIGINS", "")
+if _cors_env:
+    CORS_ORIGINS = [o.strip() for o in _cors_env.split(",")]
+else:
+    # Default: allow Vercel frontend + local dev
+    CORS_ORIGINS = [
+        "https://deepfakedetection-omega.vercel.app",
+        "https://deepfakedetection-git-main-karthik-shettys-projects-60376908.vercel.app",
+        "https://deepfakedetection-cjsxb3l9w-karthik-shettys-projects-60376908.vercel.app",
+        "http://localhost:5500",
+        "http://127.0.0.1:5500",
+    ]
 
 # ---------------------------------------------------------------------------
 # Processing timeouts

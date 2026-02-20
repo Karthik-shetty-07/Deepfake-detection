@@ -14,7 +14,7 @@ const API_BASE_URL =
 
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 const POLL_INTERVAL = 1000; // 1 second
-const POLL_TIMEOUT = 120_000; // 2 minutes max polling
+const POLL_TIMEOUT = 300_000; // 5 minutes max polling (Render cold-start safe)
 const ALLOWED_TYPES = ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.m4v'];
 
 // ============================================
@@ -198,33 +198,53 @@ async function startAnalysis() {
     // Reset progress
     updateProgress(0, 'Uploading video...');
 
-    try {
-        // Create form data
-        const formData = new FormData();
-        formData.append('file', selectedFile);
+    const MAX_RETRIES = 2;
+    let lastError = null;
 
-        // Upload file
-        const response = await fetch(`${API_BASE_URL}/analyze`, {
-            method: 'POST',
-            body: formData
-        });
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+            if (attempt > 0) {
+                updateProgress(0, `Server was waking up — retrying upload (attempt ${attempt + 1})...`);
+                // Brief pause before retry
+                await new Promise(r => setTimeout(r, 3000));
+            }
 
-        if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.detail || 'Upload failed');
+            // Create form data
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+
+            // Upload file
+            const response = await fetch(`${API_BASE_URL}/analyze`, {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'Upload failed');
+            }
+
+            const data = await response.json();
+            currentTaskId = data.task_id;
+
+            // Start polling for status
+            updateProgress(10, 'Processing started...');
+            startPolling();
+            return; // success — exit
+
+        } catch (error) {
+            lastError = error;
+            console.warn(`Upload attempt ${attempt + 1} failed:`, error);
+            // Retry on network/timeout errors, not on validation errors
+            if (error.message && !error.message.includes('Invalid') && !error.message.includes('too large') && attempt < MAX_RETRIES) {
+                continue;
+            }
+            break;
         }
-
-        const data = await response.json();
-        currentTaskId = data.task_id;
-
-        // Start polling for status
-        updateProgress(10, 'Processing started...');
-        startPolling();
-
-    } catch (error) {
-        console.error('Upload error:', error);
-        showError(error.message || 'Failed to upload video. Please try again.');
     }
+
+    console.error('Upload error after retries:', lastError);
+    showError(lastError?.message || 'Failed to upload video. The server may still be starting — please wait a moment and try again.');
 }
 
 /**
@@ -536,6 +556,46 @@ document.querySelectorAll('a[href^="#"]').forEach(anchor => {
     );
 
     lazySections.forEach((section) => observer.observe(section));
+})();
+
+// ============================================
+// Backend Wake-Up (Render free-tier cold start)
+// ============================================
+
+(function wakeUpBackend() {
+    let backendReady = false;
+
+    // Create a subtle status indicator
+    const banner = document.createElement('div');
+    banner.id = 'backendBanner';
+    banner.style.cssText = 'position:fixed;bottom:16px;right:16px;background:rgba(30,41,59,0.92);color:#94a3b8;padding:10px 18px;border-radius:10px;font-size:13px;z-index:9999;display:flex;align-items:center;gap:8px;backdrop-filter:blur(8px);border:1px solid rgba(99,102,241,0.3);box-shadow:0 4px 20px rgba(0,0,0,0.3);transition:opacity 0.5s';
+    banner.innerHTML = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#eab308;animation:pulse 1.5s infinite"></span> Connecting to server...';
+
+    // Pulse animation
+    const style = document.createElement('style');
+    style.textContent = '@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}';
+    document.head.appendChild(style);
+    document.body.appendChild(banner);
+
+    async function ping() {
+        try {
+            const res = await fetch(`${API_BASE_URL}/health`, { signal: AbortSignal.timeout(60000) });
+            if (res.ok) {
+                backendReady = true;
+                banner.innerHTML = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#22c55e"></span> Server ready';
+                console.log('✅ Backend is ready');
+                setTimeout(() => { banner.style.opacity = '0'; setTimeout(() => banner.remove(), 500); }, 2500);
+                return;
+            }
+        } catch (_) { /* still waking up */ }
+
+        // Retry every 5 seconds until ready
+        if (!backendReady) {
+            setTimeout(ping, 5000);
+        }
+    }
+
+    ping();
 })();
 
 // ============================================
