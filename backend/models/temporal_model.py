@@ -13,12 +13,15 @@ Improved with:
 - More robust statistical analysis
 - Weighted temporal scoring
 """
+import logging
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from typing import List, Dict, Optional, Tuple
 import math
+
+logger = logging.getLogger(__name__)
 
 
 class PositionalEncoding(nn.Module):
@@ -133,15 +136,15 @@ class TemporalModel:
         self.feature_mean = None
         self.feature_std = None
         
-        print(f"[Temporal Model] Initialized (lazy loading) on {self.device}")
+        logger.info("Initialized (lazy loading) on %s", self.device)
     
     def _ensure_model_loaded(self):
         if self.model is None:
-            print(f"[Temporal Model] Loading Transformer model...")
+            logger.info("Loading Transformer model...")
             self.model = TemporalTransformer(input_dim=self.input_dim)
             self.model = self.model.to(self.device)
             self.model.eval()
-            print(f"[Temporal Model] Model loaded successfully")
+            logger.info("Model loaded successfully")
     
     def normalize_features(self, features: np.ndarray) -> np.ndarray:
         if self.feature_mean is None:

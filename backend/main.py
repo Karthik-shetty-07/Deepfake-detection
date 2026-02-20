@@ -10,7 +10,7 @@ Optimized with lazy loading to minimize memory footprint during deployment.
 """
 import os
 import uuid
-import asyncio
+import logging
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict
@@ -18,16 +18,20 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 import aiofiles
 
 from config import (
     UPLOAD_DIR, MAX_FILE_SIZE_BYTES, ALLOWED_EXTENSIONS,
     API_TITLE, API_VERSION, CORS_ORIGINS, FRAMES_TO_EXTRACT,
-    FACE_SIZE, MIN_FACE_CONFIDENCE
+    FACE_SIZE, MIN_FACE_CONFIDENCE, DEBUG
 )
 from video_processor import VideoProcessor, validate_video_file
+
+logger = logging.getLogger(__name__)
+
+# Upload streaming chunk size (64 KB)
+_UPLOAD_CHUNK_SIZE = 64 * 1024
 
 
 # ============================================================================
@@ -109,54 +113,54 @@ def get_device():
 def get_cnn_detector():
     """Lazy load CNN detector only when needed."""
     if _model_cache["cnn"] is None:
-        print("[API] Loading CNN detector...")
+        logger.info("Loading CNN detector...")
         from models import CNNDetector
         _model_cache["cnn"] = CNNDetector(device=get_device())
-        print("[API] CNN detector loaded")
+        logger.info("CNN detector loaded")
     return _model_cache["cnn"]
 
 
 def get_frequency_analyzer():
     """Lazy load frequency analyzer only when needed."""
     if _model_cache["frequency"] is None:
-        print("[API] Loading frequency analyzer...")
+        logger.info("Loading frequency analyzer...")
         from models import FrequencyAnalyzer
         _model_cache["frequency"] = FrequencyAnalyzer()
-        print("[API] Frequency analyzer loaded")
+        logger.info("Frequency analyzer loaded")
     return _model_cache["frequency"]
 
 
 def get_temporal_model():
     """Lazy load temporal model only when needed."""
     if _model_cache["temporal"] is None:
-        print("[API] Loading temporal model...")
+        logger.info("Loading temporal model...")
         from models import TemporalModel
         _model_cache["temporal"] = TemporalModel(device=get_device())
-        print("[API] Temporal model loaded")
+        logger.info("Temporal model loaded")
     return _model_cache["temporal"]
 
 
 def get_ensemble_detector():
     """Lazy load ensemble detector only when needed."""
     if _model_cache["ensemble"] is None:
-        print("[API] Loading ensemble detector...")
+        logger.info("Loading ensemble detector...")
         from models import EnsembleDetector
         _model_cache["ensemble"] = EnsembleDetector()
-        print("[API] Ensemble detector loaded")
+        logger.info("Ensemble detector loaded")
     return _model_cache["ensemble"]
 
 
 def get_video_processor():
     """Lazy load video processor only when needed."""
     if _model_cache["video_processor"] is None:
-        print("[API] Loading video processor...")
+        logger.info("Loading video processor...")
         _model_cache["video_processor"] = VideoProcessor(
             frames_to_extract=FRAMES_TO_EXTRACT,
             face_size=FACE_SIZE,
             min_face_confidence=MIN_FACE_CONFIDENCE,
             device=get_device()
         )
-        print("[API] Video processor loaded")
+        logger.info("Video processor loaded")
     return _model_cache["video_processor"]
 
 
@@ -167,30 +171,30 @@ def cleanup_models():
         if _model_cache[key] is not None:
             del _model_cache[key]
             _model_cache[key] = None
-    
+
     # Force garbage collection
     import gc
     gc.collect()
-    
+
     # Clear CUDA cache if available
     if check_gpu_availability():
         import torch
         torch.cuda.empty_cache()
-    
-    print("[API] Models cleaned up, memory freed")
+
+    logger.info("Models cleaned up, memory freed")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager."""
     # Startup - DO NOT load models, just prepare directories
-    print("[API] Starting up - using lazy loading for models")
+    logger.info("Starting up - using lazy loading for models")
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    
+
     yield
-    
+
     # Shutdown - cleanup any loaded models
-    print("[API] Shutting down...")
+    logger.info("Shutting down...")
     cleanup_models()
 
 
@@ -216,6 +220,27 @@ app.add_middleware(
 
 
 # ============================================================================
+# Helpers
+# ============================================================================
+
+def _validate_uuid(value: str) -> bool:
+    """Return True if *value* is a valid UUID v4 string."""
+    try:
+        uuid.UUID(value, version=4)
+        return True
+    except (ValueError, AttributeError):
+        return False
+
+
+def _safe_error_detail(message: str) -> str:
+    """In production, strip potentially sensitive details from errors."""
+    if DEBUG:
+        return message
+    # Only return the first sentence / a generic message
+    return "An internal error occurred. Please try again."
+
+
+# ============================================================================
 # API Endpoints
 # ============================================================================
 
@@ -237,9 +262,9 @@ async def analyze_video(
 ):
     """
     Upload and analyze a video for deepfake detection.
-    
-    - **file**: Video file (max 20MB, formats: mp4, avi, mov, mkv, webm)
-    
+
+    - **file**: Video file (max 50MB, formats: mp4, avi, mov, mkv, webm)
+
     Returns a task ID that can be used to check status and get results.
     """
     # Validate file extension
@@ -249,38 +274,44 @@ async def analyze_video(
             status_code=400,
             detail=f"Invalid file type. Allowed: {', '.join(ALLOWED_EXTENSIONS)}"
         )
-    
+
     # Generate task ID
     task_id = str(uuid.uuid4())
-    
-    # Save uploaded file
+
+    # Save uploaded file — stream in chunks to avoid loading the
+    # entire upload into memory at once.
     file_path = UPLOAD_DIR / f"{task_id}{file_ext}"
-    
+
     try:
-        # Stream file to disk
+        total_written = 0
         async with aiofiles.open(file_path, 'wb') as out_file:
-            content = await file.read()
-            
-            # Check file size
-            if len(content) > MAX_FILE_SIZE_BYTES:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"File too large. Maximum size: {MAX_FILE_SIZE_BYTES / (1024*1024):.0f}MB"
-                )
-            
-            await out_file.write(content)
-    
+            while True:
+                chunk = await file.read(_UPLOAD_CHUNK_SIZE)
+                if not chunk:
+                    break
+                total_written += len(chunk)
+                if total_written > MAX_FILE_SIZE_BYTES:
+                    # Remove partial file before raising
+                    await out_file.close()
+                    cleanup_video(str(file_path))
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"File too large. Maximum size: {MAX_FILE_SIZE_BYTES / (1024*1024):.0f}MB"
+                    )
+                await out_file.write(chunk)
+
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to save file: {str(e)}")
-    
+        logger.exception("Failed to save uploaded file")
+        raise HTTPException(status_code=500, detail=_safe_error_detail(f"Failed to save file: {e}"))
+
     # Validate video file
     is_valid, message = validate_video_file(str(file_path))
     if not is_valid:
-        os.remove(file_path)
+        cleanup_video(str(file_path))
         raise HTTPException(status_code=400, detail=message)
-    
+
     # Create task status
     tasks[task_id] = AnalysisStatus(
         task_id=task_id,
@@ -289,10 +320,10 @@ async def analyze_video(
         message="Video uploaded, starting analysis...",
         created_at=datetime.now().isoformat()
     )
-    
+
     # Start background processing
     background_tasks.add_task(process_video_task, task_id, str(file_path))
-    
+
     return {
         "task_id": task_id,
         "status": "pending",
@@ -304,12 +335,15 @@ async def analyze_video(
 async def get_status(task_id: str):
     """
     Get the status of an analysis task.
-    
+
     - **task_id**: Task ID returned from /api/analyze
     """
+    if not _validate_uuid(task_id):
+        raise HTTPException(status_code=400, detail="Invalid task ID format")
+
     if task_id not in tasks:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     return tasks[task_id]
 
 
@@ -317,14 +351,17 @@ async def get_status(task_id: str):
 async def get_result(task_id: str):
     """
     Get the full result of a completed analysis.
-    
+
     - **task_id**: Task ID returned from /api/analyze
     """
+    if not _validate_uuid(task_id):
+        raise HTTPException(status_code=400, detail="Invalid task ID format")
+
     if task_id not in tasks:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     task = tasks[task_id]
-    
+
     if task.status != "completed":
         return {
             "task_id": task_id,
@@ -332,7 +369,7 @@ async def get_result(task_id: str):
             "message": task.message,
             "result": None
         }
-    
+
     return {
         "task_id": task_id,
         "status": "completed",
@@ -357,7 +394,7 @@ async def cleanup_endpoint():
 async def process_video_task(task_id: str, video_path: str):
     """
     Background task to process a video.
-    
+
     This runs the full analysis pipeline with lazy-loaded models:
     1. Extract frames and detect faces
     2. Run CNN analysis
@@ -367,58 +404,58 @@ async def process_video_task(task_id: str, video_path: str):
     """
     import time
     start_time = time.time()
-    
+
     try:
         # Update status
         tasks[task_id].status = "processing"
         tasks[task_id].progress = 0.1
         tasks[task_id].message = "Extracting frames and detecting faces..."
-        
+
         # Process video (lazy loads video processor if needed)
         video_processor = get_video_processor()
         video_info = video_processor.get_video_info(video_path)
         face_images = video_processor.get_face_images(video_path)
-        
+
         if len(face_images) == 0:
             tasks[task_id].status = "failed"
             tasks[task_id].message = "No faces detected in video"
             cleanup_video(video_path)
             return
-        
+
         tasks[task_id].progress = 0.3
         tasks[task_id].message = f"Analyzing {len(face_images)} faces with CNN..."
-        
+
         # Run CNN analysis (lazy loads CNN detector if needed)
         cnn_detector = get_cnn_detector()
         cnn_result = cnn_detector.analyze_video_frames(face_images)
-        
+
         tasks[task_id].progress = 0.5
         tasks[task_id].message = "Running frequency analysis..."
-        
+
         # Run frequency analysis (lazy loads frequency analyzer if needed)
         freq_analyzer = get_frequency_analyzer()
         freq_result = freq_analyzer.analyze_video_frames(face_images)
-        
+
         tasks[task_id].progress = 0.7
         tasks[task_id].message = "Analyzing temporal patterns..."
-        
+
         # Run temporal analysis (lazy loads temporal model if needed)
         temp_model = get_temporal_model()
         if len(cnn_result.get("features", [])) > 0:
             temp_result = temp_model.analyze_video_features(cnn_result["features"])
         else:
             temp_result = {"mean_score": 0.5, "temporal_consistency": 1.0, "anomaly_count": 0}
-        
+
         tasks[task_id].progress = 0.9
         tasks[task_id].message = "Computing final classification..."
-        
+
         # Ensemble fusion (lazy loads ensemble detector if needed)
         ensemble = get_ensemble_detector()
         final_result = ensemble.analyze(cnn_result, freq_result, temp_result)
-        
+
         # Calculate processing time
         processing_time = time.time() - start_time
-        
+
         # Build result
         result = {
             "final_score": round(final_result.final_score * 100, 1),
@@ -438,23 +475,21 @@ async def process_video_task(task_id: str, video_path: str):
                 "resolution": f"{video_info.get('width', 0)}x{video_info.get('height', 0)}"
             }
         }
-        
+
         # Update task
         tasks[task_id].status = "completed"
         tasks[task_id].progress = 1.0
         tasks[task_id].message = "Analysis complete"
         tasks[task_id].result = result
         tasks[task_id].completed_at = datetime.now().isoformat()
-        
-        print(f"[API] Task {task_id} completed in {processing_time:.2f}s")
-        
+
+        logger.info("Task %s completed in %.2fs", task_id, processing_time)
+
     except Exception as e:
         tasks[task_id].status = "failed"
         tasks[task_id].message = f"Analysis failed: {str(e)}"
-        print(f"[API] Task {task_id} failed: {str(e)}")
-        import traceback
-        traceback.print_exc()
-    
+        logger.exception("Task %s failed", task_id)
+
     finally:
         # Cleanup
         cleanup_video(video_path)
@@ -466,7 +501,7 @@ def cleanup_video(video_path: str):
         if os.path.exists(video_path):
             os.remove(video_path)
     except Exception as e:
-        print(f"[API] Failed to cleanup {video_path}: {e}")
+        logger.warning("Failed to cleanup %s: %s", video_path, e)
 
 
 # ============================================================================
@@ -475,4 +510,5 @@ def cleanup_video(video_path: str):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.environ.get("PORT", "8000"))
+    uvicorn.run(app, host="0.0.0.0", port=port)

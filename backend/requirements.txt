@@ -1,6 +1,7 @@
 # Backend Dependencies
 fastapi>=0.100.0
 uvicorn[standard]>=0.20.0
+gunicorn>=21.2.0
 python-multipart>=0.0.5
 aiofiles>=23.0.0
 
@@ -21,5 +22,3 @@ facenet-pytorch>=2.5.0
 
 # Utilities
 pydantic>=2.0.0
-tqdm>=4.65.0
-

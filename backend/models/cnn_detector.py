@@ -8,6 +8,7 @@ Supports two backbones:
 OPTIMIZED: Models are loaded lazily only when needed.
 Trained weights are automatically loaded from weights/ directory.
 """
+import logging
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -17,6 +18,8 @@ import numpy as np
 from typing import List, Tuple, Optional
 from PIL import Image
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 class XceptionNet(nn.Module):
@@ -174,12 +177,12 @@ class CNNDetector:
             ]),
         ]
         
-        print(f"[CNN Detector] Initialized ({model_type}, lazy loading) on {self.device}")
+        logger.info("Initialized (%s, lazy loading) on %s", model_type, self.device)
     
     def _ensure_model_loaded(self):
         """Load the model if not already loaded, including trained weights."""
         if self.model is None:
-            print(f"[CNN Detector] Loading {self.model_type} model...")
+            logger.info("Loading %s model...", self.model_type)
             
             if self.model_type == "efficientnet":
                 self.model = EfficientNetDetector(pretrained=self.pretrained)
@@ -192,7 +195,7 @@ class CNNDetector:
             self._load_trained_weights()
             
             self.model.eval()
-            print(f"[CNN Detector] Model loaded successfully")
+            logger.info("Model loaded successfully")
     
     def _load_trained_weights(self):
         """Attempt to load trained weights from the weights directory."""
@@ -206,15 +209,15 @@ class CNNDetector:
                 if 'model_state_dict' in checkpoint:
                     self.model.load_state_dict(checkpoint['model_state_dict'], strict=False)
                     acc = checkpoint.get('best_acc', 'unknown')
-                    print(f"[CNN Detector] Loaded trained weights (accuracy: {acc})")
+                    logger.info("Loaded trained weights (accuracy: %s)", acc)
                 else:
                     self.model.load_state_dict(checkpoint, strict=False)
-                    print(f"[CNN Detector] Loaded trained weights")
+                    logger.info("Loaded trained weights")
             except Exception as e:
-                print(f"[CNN Detector] Could not load trained weights: {e}")
-                print(f"[CNN Detector] Using ImageNet pre-trained weights")
+                logger.warning("Could not load trained weights: %s", e)
+                logger.info("Using ImageNet pre-trained weights")
         else:
-            print(f"[CNN Detector] No trained weights found, using ImageNet pre-trained")
+            logger.info("No trained weights found, using ImageNet pre-trained")
     
     def preprocess_face(self, face_image: np.ndarray) -> torch.Tensor:
         """

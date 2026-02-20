@@ -1,0 +1,25 @@
+# Render deployment blueprint
+# https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: deepfake-detection-api
+    runtime: python
+    region: oregon
+    plan: free
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -k uvicorn.workers.UvicornWorker main:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120 --preload
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.6"
+      - key: PORT
+        value: "10000"
+      - key: CORS_ORIGINS
+        sync: false          # set manually in Render dashboard
+      - key: LOG_LEVEL
+        value: "INFO"
+      - key: DEBUG
+        value: "false"
+      - key: MAX_FILE_SIZE_MB
+        value: "50"

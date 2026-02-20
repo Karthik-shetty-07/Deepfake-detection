@@ -12,10 +12,13 @@ Improved with:
 - Better calibration curves
 - Multi-indicator boosting
 """
+import logging
 import numpy as np
 from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
+
+logger = logging.getLogger(__name__)
 
 
 class DetectionResult(Enum):
@@ -94,7 +97,7 @@ class EnsembleDetector:
         total = sum(self.weights.values())
         self.weights = {k: v/total for k, v in self.weights.items()}
         
-        print(f"[Ensemble Detector] Initialized with weights: {self.weights}")
+        logger.info("Initialized with weights: %s", self.weights)
     
     def fuse_scores(
         self,

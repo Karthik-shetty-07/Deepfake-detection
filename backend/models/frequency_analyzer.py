@@ -12,11 +12,14 @@ Improved with:
 - Wavelet-based texture inconsistency detection
 - Better calibrated scoring with more discriminative features
 """
+import logging
 import numpy as np
 from scipy import fftpack
 from scipy.ndimage import gaussian_filter
 from typing import List, Tuple, Dict
 import cv2
+
+logger = logging.getLogger(__name__)
 
 
 class FrequencyAnalyzer:
@@ -31,7 +34,7 @@ class FrequencyAnalyzer:
     """
     
     def __init__(self):
-        print("[Frequency Analyzer] Initialized (enhanced multi-feature)")
+        logger.info("Initialized (enhanced multi-feature)")
     
     def compute_fft_features(self, image: np.ndarray) -> Dict[str, float]:
         """

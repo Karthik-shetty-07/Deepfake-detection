@@ -1,15 +1,26 @@
 /**
- * DeepGuard AI - Frontend Application
+ * Karthik-shetty-07 Deepfake Detection - Frontend Application
  * Handles video upload, API communication, and result display
  */
 
+// ============================================
 // Configuration
-const API_BASE_URL = 'https://deepfake-detection-1-6jc0.onrender.com/api';
+// ============================================
+
+// API URL: override via window.__ENV__.API_URL for deployment flexibility
+const API_BASE_URL =
+    (window.__ENV__ && window.__ENV__.API_URL) ||
+    'https://deepfake-detection-1-6jc0.onrender.com/api';
+
 const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
 const POLL_INTERVAL = 1000; // 1 second
+const POLL_TIMEOUT = 120_000; // 2 minutes max polling
 const ALLOWED_TYPES = ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.m4v'];
 
+// ============================================
 // DOM Elements
+// ============================================
+
 const uploadZone = document.getElementById('uploadZone');
 const videoInput = document.getElementById('videoInput');
 const fileSelected = document.getElementById('fileSelected');
@@ -28,10 +39,15 @@ const errorMessage = document.getElementById('errorMessage');
 const retryBtn = document.getElementById('retryBtn');
 const newAnalysis = document.getElementById('newAnalysis');
 
+// ============================================
 // State
+// ============================================
+
 let selectedFile = null;
 let currentTaskId = null;
 let pollTimer = null;
+let pollStartTime = null;
+let _previewObjectUrl = null; // track for cleanup
 
 // ============================================
 // File Upload Handling
@@ -117,9 +133,14 @@ function handleFileSelect(file) {
     fileName.textContent = file.name;
     fileSize.textContent = formatFileSize(file.size);
 
+    // Revoke previous object URL to avoid memory leaks
+    if (_previewObjectUrl) {
+        URL.revokeObjectURL(_previewObjectUrl);
+    }
+
     // Show video preview
-    const url = URL.createObjectURL(file);
-    videoPreview.src = url;
+    _previewObjectUrl = URL.createObjectURL(file);
+    videoPreview.src = _previewObjectUrl;
 
     // Show file selected state
     uploadZone.classList.add('hidden');
@@ -136,6 +157,12 @@ function resetToUpload() {
     if (pollTimer) {
         clearInterval(pollTimer);
         pollTimer = null;
+    }
+
+    // Revoke object URL
+    if (_previewObjectUrl) {
+        URL.revokeObjectURL(_previewObjectUrl);
+        _previewObjectUrl = null;
     }
 
     videoInput.value = '';
@@ -204,7 +231,17 @@ async function startAnalysis() {
  * Start polling for task status
  */
 function startPolling() {
+    pollStartTime = Date.now();
+
     pollTimer = setInterval(async () => {
+        // Timeout guard — stop polling after POLL_TIMEOUT ms
+        if (Date.now() - pollStartTime > POLL_TIMEOUT) {
+            clearInterval(pollTimer);
+            pollTimer = null;
+            showError('Analysis timed out. Please try again with a shorter video.');
+            return;
+        }
+
         try {
             const response = await fetch(`${API_BASE_URL}/status/${currentTaskId}`);
 
@@ -279,7 +316,7 @@ function updateProgress(percent, message) {
     progressPercent.textContent = `${percent}%`;
     processingStatus.textContent = message;
 
-    // Update progress circle (optional - simplified animation)
+    // Update progress circle
     const circle = document.querySelector('.progress-circle');
     if (circle) {
         const circumference = 251.2;
@@ -473,7 +510,36 @@ document.querySelectorAll('a[href^="#"]').forEach(anchor => {
 });
 
 // ============================================
+// Lazy Loading – IntersectionObserver
+// ============================================
+
+/**
+ * Reveal below-the-fold sections with a fade-in when they
+ * scroll into view.  Sections should carry the class
+ * "lazy-section" — the observer adds "visible" once they
+ * enter the viewport.
+ */
+(function initLazyLoad() {
+    const lazySections = document.querySelectorAll('.lazy-section');
+    if (!lazySections.length) return;
+
+    const observer = new IntersectionObserver(
+        (entries) => {
+            entries.forEach((entry) => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('visible');
+                    observer.unobserve(entry.target); // animate only once
+                }
+            });
+        },
+        { threshold: 0.1 }
+    );
+
+    lazySections.forEach((section) => observer.observe(section));
+})();
+
+// ============================================
 // Initialize
 // ============================================
 
-console.log('🎓 IDT Deepfake Detection initialized');
+console.log('🎓 Karthik-shetty-07 Deepfake Detection initialized');
