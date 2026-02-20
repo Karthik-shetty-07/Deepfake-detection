@@ -99,6 +99,4 @@ curl http://localhost:8000/api/status/{task_id}
 - **Frontend**: Vanilla HTML/CSS/JS
 - **Face Detection**: MTCNN / MediaPipe
 
-## License
 
-MIT License - Built for a safer digital world.
