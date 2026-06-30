@@ -12,7 +12,7 @@ const API_BASE_URL =
     (window.__ENV__ && window.__ENV__.API_URL) ||
     'https://deepfake-detection-1-6jc0.onrender.com/api';
 
-const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB
+const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB (matches backend)
 const POLL_INTERVAL = 1000; // 1 second
 const POLL_TIMEOUT = 300_000; // 5 minutes max polling (Render cold-start safe)
 const ALLOWED_TYPES = ['.mp4', '.avi', '.mov', '.mkv', '.webm', '.m4v'];

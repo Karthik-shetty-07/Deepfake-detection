@@ -16,20 +16,10 @@ import os
 
 logger = logging.getLogger(__name__)
 
-# Face detection using facenet-pytorch's MTCNN
-try:
-    from facenet_pytorch import MTCNN
-    MTCNN_AVAILABLE = True
-except ImportError:
-    MTCNN_AVAILABLE = False
-    logger.warning("facenet-pytorch not available, using OpenCV face detector")
-
-# Alternative: MediaPipe face detection
-try:
-    import mediapipe as mp
-    MEDIAPIPE_AVAILABLE = True
-except ImportError:
-    MEDIAPIPE_AVAILABLE = False
+# Availability flags — resolved lazily inside _init_face_detector()
+# so that torch / mediapipe are NOT imported at module load time.
+MTCNN_AVAILABLE = None
+MEDIAPIPE_AVAILABLE = None
 
 
 @dataclass
@@ -67,8 +57,27 @@ class VideoProcessor:
         logger.info("Initialized - extracting %d frames", frames_to_extract)
 
     def _init_face_detector(self):
-        """Initialize the face detection model."""
+        """Initialize the face detection model (imports heavy deps here)."""
+        global MTCNN_AVAILABLE, MEDIAPIPE_AVAILABLE
+
+        # Resolve availability on first call
+        if MTCNN_AVAILABLE is None:
+            try:
+                from facenet_pytorch import MTCNN  # noqa: F811
+                MTCNN_AVAILABLE = True
+            except ImportError:
+                MTCNN_AVAILABLE = False
+                logger.warning("facenet-pytorch not available, trying alternatives")
+
+        if MEDIAPIPE_AVAILABLE is None:
+            try:
+                import mediapipe  # noqa: F811
+                MEDIAPIPE_AVAILABLE = True
+            except ImportError:
+                MEDIAPIPE_AVAILABLE = False
+
         if MTCNN_AVAILABLE:
+            from facenet_pytorch import MTCNN
             import torch
             device = torch.device(self.device if torch.cuda.is_available() else "cpu")
             self.face_detector = MTCNN(
@@ -83,6 +92,7 @@ class VideoProcessor:
             )
             self.detector_type = "mtcnn"
         elif MEDIAPIPE_AVAILABLE:
+            import mediapipe as mp
             self.face_detector = mp.solutions.face_detection.FaceDetection(
                 model_selection=1,  # Full range model
                 min_detection_confidence=0.5

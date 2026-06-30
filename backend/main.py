@@ -391,11 +391,15 @@ async def cleanup_endpoint():
 # Background Processing
 # ============================================================================
 
-async def process_video_task(task_id: str, video_path: str):
+def process_video_task(task_id: str, video_path: str):
     """
     Background task to process a video.
 
-    This runs the full analysis pipeline with lazy-loaded models:
+    Defined as a regular (sync) function so FastAPI runs it in a
+    thread-pool executor, keeping the async event-loop free for
+    status-polling requests.
+
+    Pipeline:
     1. Extract frames and detect faces
     2. Run CNN analysis
     3. Run frequency analysis

@@ -10,9 +10,8 @@ build/
 venv/
 env/
 
-# Uploaded / generated files
+# Uploaded files (not model weights — those are tracked by LFS)
 backend/uploads/
-backend/weights/*.pth
 
 # IDE
 .vscode/
